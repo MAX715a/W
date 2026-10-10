@@ -1,44 +1,203 @@
-local MaxUI = loadstring(game:HttpGet("رابط_الملف_على_جيتهاب"))()
+local MaxUI = {}
+MaxUI.__index = MaxUI
 
-local Window = MaxUI.CreateWindow("MAX", "صنع بواسطة MAX")
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
 
--- إشعار ترحيبي (بعد ما الأنيميشن يخلص)
-task.delay(1.2, function()
-    Window:NotifySuccess("مرحباً", "MAX UI اشتغل بنجاح!")
-end)
+function MaxUI.CreateWindow(TitleText, SubTitleText)
+    local Window = {}
+    
+    -- ScreenGui
+    local MaxScreenGui = Instance.new("ScreenGui")
+    MaxScreenGui.Name = "MAX_CustomUI"
+    MaxScreenGui.ResetOnSpawn = false
+    pcall(function() MaxScreenGui.Parent = CoreGui end)
 
--- قسم
-Window:AddSection("  الخيارات الأساسية  ")
+    -- Main Centered Frame
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Name = "MainFrame"
+    MainFrame.Size = UDim2.new(0, 360, 0, 320)
+    MainFrame.Position = UDim2.new(0.5, -180, 0.5, -160)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(15, 16, 20)
+    MainFrame.BorderSizePixel = 0
+    MainFrame.Parent = MaxScreenGui
 
--- زر
-Window:AddButton("زر تجريبي", function()
-    Window:NotifyInfo("تم", "ضغطت على الزر")
-end)
+    local MainCorner = Instance.new("UICorner", MainFrame)
+    MainCorner.CornerRadius = UDim.new(0, 16)
 
--- Toggle
-Window:AddToggle("تفعيل الميزة", false, function(v)
-    print("Toggle:", v)
-end, "feature1")
+    local MainStroke = Instance.new("UIStroke", MainFrame)
+    MainStroke.Color = Color3.fromRGB(50, 52, 65)
+    MainStroke.Thickness = 1.5
 
--- Slider
-Window:AddSlider("السرعة", 70, 400, 300, function(v)
-    print("Speed:", v)
-end, "speed")
+    -- Header Titles
+    local TitleLabel = Instance.new("TextLabel")
+    TitleLabel.Name = "TitleLabel"
+    TitleLabel.Size = UDim2.new(1, 0, 0, 45)
+    TitleLabel.Position = UDim2.new(0, 0, 0, 10)
+    TitleLabel.BackgroundTransparency = 1
+    TitleLabel.Text = TitleText or "MAX"
+    TitleLabel.TextColor3 = Color3.fromRGB(240, 242, 245)
+    TitleLabel.Font = Enum.Font.GothamBold
+    TitleLabel.TextSize = 22
+    TitleLabel.Parent = MainFrame
 
--- Input
-Window:AddInput("اكتب هنا...", "تطبيق", function(text)
-    print("Input:", text)
-end)
+    local SubTitleLabel = Instance.new("TextLabel")
+    SubTitleLabel.Name = "SubTitleLabel"
+    SubTitleLabel.Size = UDim2.new(1, 0, 0, 20)
+    SubTitleLabel.Position = UDim2.new(0, 0, 0, 50)
+    SubTitleLabel.BackgroundTransparency = 1
+    SubTitleLabel.Text = SubTitleText or "صنع بواسطة MAX"
+    SubTitleLabel.TextColor3 = Color3.fromRGB(130, 135, 150)
+    SubTitleLabel.Font = Enum.Font.Gotham
+    SubTitleLabel.TextSize = 11
+    SubTitleLabel.Parent = MainFrame
 
--- Dropdown
-Window:AddDropdown("اختر خيار", {"خيار 1", "خيار 2", "خيار 3"}, "خيار 1", function(v)
-    print("Selected:", v)
-end, "dropdown1")
+    -- Container Frame
+    local Container = Instance.new("Frame")
+    Container.Name = "Container"
+    Container.Size = UDim2.new(0.88, 0, 0.72, 0)
+    Container.Position = UDim2.new(0.06, 0, 0.24, 0)
+    Container.BackgroundTransparency = 1
+    Container.Parent = MainFrame
 
--- Grid Buttons
-Window:AddGridButtons({"A", "B", "C", "D", "E"}, function(v)
-    print("Grid:", v)
-end)
+    local UIListLayout = Instance.new("UIListLayout")
+    UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    UIListLayout.Padding = UDim.new(0, 10)
+    UIListLayout.Parent = Container
 
--- Label
-Window:AddLabel("هذا نص توضيحي")
+    -- Dragging System
+    local IsDragging = false
+    local DragStart, StartPos
+
+    TitleLabel.InputBegan:Connect(function(InputObject)
+        if InputObject.UserInputType == Enum.UserInputType.MouseButton1 or InputObject.UserInputType == Enum.UserInputType.Touch then
+            IsDragging = true
+            DragStart = InputObject.Position
+            StartPos = MainFrame.Position
+        end
+    end)
+
+    TitleLabel.InputEnded:Connect(function(InputObject)
+        if InputObject.UserInputType == Enum.UserInputType.MouseButton1 or InputObject.UserInputType == Enum.UserInputType.Touch then
+            IsDragging = false
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(InputObject)
+        if IsDragging and (InputObject.UserInputType == Enum.UserInputType.MouseMovement or InputObject.UserInputType == Enum.UserInputType.Touch) then
+            local Delta = InputObject.Position - DragStart
+            MainFrame.Position = UDim2.new(
+                StartPos.X.Scale, 
+                StartPos.X.Offset + Delta.X, 
+                StartPos.Y.Scale, 
+                StartPos.Y.Offset + Delta.Y
+            )
+        end
+    end)
+
+    -- Elements Methods
+    function Window:AddInput(Placeholder, ButtonText, OnApply)
+        local InputFrame = Instance.new("Frame")
+        InputFrame.Size = UDim2.new(1, 0, 0, 42)
+        InputFrame.BackgroundColor3 = Color3.fromRGB(24, 26, 34)
+        InputFrame.Parent = Container
+
+        Instance.new("UICorner", InputFrame).CornerRadius = UDim.new(0, 10)
+        local InputStroke = Instance.new("UIStroke", InputFrame)
+        InputStroke.Color = Color3.fromRGB(60, 65, 80)
+        InputStroke.Thickness = 1.2
+
+        local TextBox = Instance.new("TextBox")
+        TextBox.Size = UDim2.new(0.65, 0, 1, 0)
+        TextBox.Position = UDim2.new(0.04, 0, 0, 0)
+        TextBox.BackgroundTransparency = 1
+        TextBox.PlaceholderText = Placeholder or "اكتب هنا..."
+        TextBox.PlaceholderColor3 = Color3.fromRGB(100, 105, 120)
+        TextBox.Text = ""
+        TextBox.TextColor3 = Color3.fromRGB(240, 242, 245)
+        TextBox.Font = Enum.Font.GothamBold
+        TextBox.TextSize = 12
+        TextBox.TextXAlignment = Enum.TextXAlignment.Left
+        TextBox.Parent = InputFrame
+
+        local ApplyButton = Instance.new("TextButton")
+        ApplyButton.Size = UDim2.new(0.28, 0, 0.74, 0)
+        ApplyButton.Position = UDim2.new(0.68, 0, 0.13, 0)
+        ApplyButton.BackgroundColor3 = Color3.fromRGB(240, 242, 245)
+        ApplyButton.Text = ButtonText or "تطبيق"
+        ApplyButton.TextColor3 = Color3.fromRGB(15, 16, 20)
+        ApplyButton.Font = Enum.Font.GothamBold
+        ApplyButton.TextSize = 11
+        ApplyButton.Parent = InputFrame
+
+        Instance.new("UICorner", ApplyButton).CornerRadius = UDim.new(0, 8)
+
+        local function Execute()
+            if OnApply then OnApply(TextBox.Text) end
+        end
+
+        ApplyButton.MouseButton1Click:Connect(Execute)
+        TextBox.FocusLost:Connect(function(Enter) if Enter then Execute() end end)
+        
+        return TextBox
+    end
+
+    function Window:AddGridButtons(ButtonsTable, OnClick)
+        local GridContainer = Instance.new("Frame")
+        GridContainer.Size = UDim2.new(1, 0, 0, 100)
+        GridContainer.BackgroundTransparency = 1
+        GridContainer.Parent = Container
+
+        local UIGridLayout = Instance.new("UIGridLayout")
+        UIGridLayout.CellSize = UDim2.new(0.31, 0, 0.42, 0)
+        UIGridLayout.CellPadding = UDim2.new(0.03, 0, 0.12, 0)
+        UIGridLayout.Parent = GridContainer
+
+        for _, Value in ipairs(ButtonsTable) do
+            local PresetBtn = Instance.new("TextButton")
+            PresetBtn.Text = tostring(Value)
+            PresetBtn.BackgroundColor3 = Color3.fromRGB(24, 26, 34)
+            PresetBtn.TextColor3 = Color3.fromRGB(180, 185, 200)
+            PresetBtn.Font = Enum.Font.GothamBold
+            PresetBtn.TextSize = 12
+            PresetBtn.Parent = GridContainer
+
+            Instance.new("UICorner", PresetBtn).CornerRadius = UDim.new(0, 8)
+            local BtnStroke = Instance.new("UIStroke", PresetBtn)
+            BtnStroke.Color = Color3.fromRGB(60, 65, 80)
+            BtnStroke.Thickness = 1.2
+
+            PresetBtn.MouseButton1Click:Connect(function()
+                if OnClick then OnClick(Value) end
+            end)
+        end
+    end
+
+    function Window:AddButton(Text, OnClick)
+        local ActionButton = Instance.new("TextButton")
+        ActionButton.Size = UDim2.new(1, 0, 0, 34)
+        ActionButton.BackgroundColor3 = Color3.fromRGB(24, 26, 34)
+        ActionButton.Text = Text or "زر جديد"
+        ActionButton.TextColor3 = Color3.fromRGB(180, 185, 200)
+        ActionButton.Font = Enum.Font.GothamBold
+        ActionButton.TextSize = 11
+        ActionButton.Parent = Container
+
+        Instance.new("UICorner", ActionButton).CornerRadius = UDim.new(0, 8)
+        local Stroke = Instance.new("UIStroke", ActionButton)
+        Stroke.Color = Color3.fromRGB(60, 65, 80)
+        Stroke.Thickness = 1.2
+
+        ActionButton.MouseButton1Click:Connect(function()
+            if OnClick then OnClick() end
+        end)
+    end
+
+    function Window:Destroy()
+        MaxScreenGui:Destroy()
+    end
+
+    return Window
+end
+
+return MaxUI

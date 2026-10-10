@@ -1,203 +1,1234 @@
+-- ═══════════════════════════════════════════════════════════════
+--  MAX UI LIBRARY — v3.0
+--  Part 1/3 : Core + Window + Header + Drag + Animations
+-- ═══════════════════════════════════════════════════════════════
+
 local MaxUI = {}
 MaxUI.__index = MaxUI
 
-local CoreGui = game:GetService("CoreGui")
+local CoreGui          = game:GetService("CoreGui")
+local TweenService     = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local RunService       = game:GetService("RunService")
 
+-- ═══════════════════════════════════════════════════════════════
+--  INTERNAL HELPERS
+-- ═══════════════════════════════════════════════════════════════
+local function safeParent(gui)
+    local ok = pcall(function() gui.Parent = CoreGui end)
+    if ok and gui.Parent then return end
+    local lp = game:GetService("Players").LocalPlayer
+    gui.Parent = lp:WaitForChild("PlayerGui")
+end
+
+local function create(class, props, parent)
+    local inst = Instance.new(class)
+    for k, v in pairs(props or {}) do inst[k] = v end
+    if parent then inst.Parent = parent end
+    return inst
+end
+
+-- ═══════════════════════════════════════════════════════════════
+--  MAIN — CreateWindow
+-- ═══════════════════════════════════════════════════════════════
 function MaxUI.CreateWindow(TitleText, SubTitleText)
     local Window = {}
-    
-    -- ScreenGui
-    local MaxScreenGui = Instance.new("ScreenGui")
-    MaxScreenGui.Name = "MAX_CustomUI"
-    MaxScreenGui.ResetOnSpawn = false
-    pcall(function() MaxScreenGui.Parent = CoreGui end)
+    Window._elements = {}
+    Window._tabs = {}
+    Window._currentTab = nil
+    Window._connections = {}
+    Window._destroyed = false
+    Window.Flags = {}
 
-    -- Main Centered Frame
-    local MainFrame = Instance.new("Frame")
-    MainFrame.Name = "MainFrame"
-    MainFrame.Size = UDim2.new(0, 360, 0, 320)
-    MainFrame.Position = UDim2.new(0.5, -180, 0.5, -160)
-    MainFrame.BackgroundColor3 = Color3.fromRGB(15, 16, 20)
-    MainFrame.BorderSizePixel = 0
-    MainFrame.Parent = MaxScreenGui
+    -- Window dimensions (same as original)
+    local WIN_W = 360
+    local WIN_H = 320
+    local ANIM_SPEED = 0.5
+    local AnimEnabled = true
 
-    local MainCorner = Instance.new("UICorner", MainFrame)
-    MainCorner.CornerRadius = UDim.new(0, 16)
+    -- ──────────────────────────────────────────────────────────
+    --  SCREEN GUI
+    -- ──────────────────────────────────────────────────────────
+    local MaxScreenGui = create("ScreenGui", {
+        Name = "MAX_CustomUI",
+        ResetOnSpawn = false,
+        IgnoreGuiInset = true,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    })
+    pcall(function()
+        if syn and syn.protect_gui then syn.protect_gui(MaxScreenGui) end
+    end)
+    safeParent(MaxScreenGui)
+    Window.ScreenGui = MaxScreenGui
 
-    local MainStroke = Instance.new("UIStroke", MainFrame)
-    MainStroke.Color = Color3.fromRGB(50, 52, 65)
-    MainStroke.Thickness = 1.5
+    -- ──────────────────────────────────────────────────────────
+    --  OVERLAY (خلفية معتمة تظهر عند الفتح)
+    -- ──────────────────────────────────────────────────────────
+    local Overlay = create("Frame", {
+        Name = "Overlay",
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ZIndex = 0,
+    }, MaxScreenGui)
 
-    -- Header Titles
-    local TitleLabel = Instance.new("TextLabel")
-    TitleLabel.Name = "TitleLabel"
-    TitleLabel.Size = UDim2.new(1, 0, 0, 45)
-    TitleLabel.Position = UDim2.new(0, 0, 0, 10)
-    TitleLabel.BackgroundTransparency = 1
-    TitleLabel.Text = TitleText or "MAX"
-    TitleLabel.TextColor3 = Color3.fromRGB(240, 242, 245)
-    TitleLabel.Font = Enum.Font.GothamBold
-    TitleLabel.TextSize = 22
-    TitleLabel.Parent = MainFrame
+    -- ──────────────────────────────────────────────────────────
+    --  MAIN FRAME
+    -- ──────────────────────────────────────────────────────────
+    local MainFrame = create("Frame", {
+        Name = "MainFrame",
+        Size = UDim2.new(0, WIN_W, 0, WIN_H),
+        Position = UDim2.new(0.5, -WIN_W / 2, 0.5, -WIN_H / 2),
+        BackgroundColor3 = Color3.fromRGB(15, 16, 20),
+        BorderSizePixel = 0,
+        ClipsDescendants = true,
+        Active = true,
+    }, MaxScreenGui)
+    Window.MainFrame = MainFrame
 
-    local SubTitleLabel = Instance.new("TextLabel")
-    SubTitleLabel.Name = "SubTitleLabel"
-    SubTitleLabel.Size = UDim2.new(1, 0, 0, 20)
-    SubTitleLabel.Position = UDim2.new(0, 0, 0, 50)
-    SubTitleLabel.BackgroundTransparency = 1
-    SubTitleLabel.Text = SubTitleText or "صنع بواسطة MAX"
-    SubTitleLabel.TextColor3 = Color3.fromRGB(130, 135, 150)
-    SubTitleLabel.Font = Enum.Font.Gotham
-    SubTitleLabel.TextSize = 11
-    SubTitleLabel.Parent = MainFrame
+    create("UICorner", { CornerRadius = UDim.new(0, 16), Parent = MainFrame })
 
-    -- Container Frame
-    local Container = Instance.new("Frame")
-    Container.Name = "Container"
-    Container.Size = UDim2.new(0.88, 0, 0.72, 0)
-    Container.Position = UDim2.new(0.06, 0, 0.24, 0)
-    Container.BackgroundTransparency = 1
-    Container.Parent = MainFrame
+    local MainStroke = create("UIStroke", {
+        Color = Color3.fromRGB(50, 52, 65),
+        Thickness = 1.5,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+    }, MainFrame)
 
-    local UIListLayout = Instance.new("UIListLayout")
-    UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    UIListLayout.Padding = UDim.new(0, 10)
-    UIListLayout.Parent = Container
+    -- ──────────────────────────────────────────────────────────
+    --  GLOW (توهج خلف النافذة)
+    -- ──────────────────────────────────────────────────────────
+    local Glow = create("Frame", {
+        Name = "Glow",
+        Size = UDim2.new(1, 20, 1, 20),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = Color3.fromRGB(50, 52, 65),
+        BackgroundTransparency = 0.88,
+        BorderSizePixel = 0,
+        ZIndex = 0,
+    }, MainFrame)
+    create("UICorner", { CornerRadius = UDim.new(0, 20), Parent = Glow })
 
-    -- Dragging System
+    -- ──────────────────────────────────────────────────────────
+    --  HEADER
+    -- ──────────────────────────────────────────────────────────
+    local TitleLabel = create("TextLabel", {
+        Name = "TitleLabel",
+        Size = UDim2.new(1, -60, 0, 45),
+        Position = UDim2.new(0, 10, 0, 10),
+        BackgroundTransparency = 1,
+        Text = TitleText or "MAX",
+        TextColor3 = Color3.fromRGB(240, 242, 245),
+        Font = Enum.Font.GothamBold,
+        TextSize = 22,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextTransparency = 0,
+    }, MainFrame)
+
+    local SubTitleLabel = create("TextLabel", {
+        Name = "SubTitleLabel",
+        Size = UDim2.new(1, -60, 0, 20),
+        Position = UDim2.new(0, 10, 0, 50),
+        BackgroundTransparency = 1,
+        Text = SubTitleText or "صنع بواسطة MAX",
+        TextColor3 = Color3.fromRGB(130, 135, 150),
+        Font = Enum.Font.Gotham,
+        TextSize = 11,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextTransparency = 0,
+    }, MainFrame)
+
+    -- ──────────────────────────────────────────────────────────
+    --  CLOSE BUTTON
+    -- ──────────────────────────────────────────────────────────
+    local CloseButton = create("TextButton", {
+        Name = "CloseButton",
+        Size = UDim2.new(0, 28, 0, 28),
+        Position = UDim2.new(1, -38, 0, 12),
+        BackgroundColor3 = Color3.fromRGB(24, 26, 34),
+        Text = "✕",
+        TextColor3 = Color3.fromRGB(180, 185, 200),
+        Font = Enum.Font.GothamBold,
+        TextSize = 14,
+        AutoButtonColor = false,
+        BackgroundTransparency = 0,
+        TextTransparency = 0,
+    }, MainFrame)
+    create("UICorner", { CornerRadius = UDim.new(0, 8), Parent = CloseButton })
+
+    local CloseStroke = create("UIStroke", {
+        Color = Color3.fromRGB(60, 65, 80),
+        Thickness = 1.2,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+    }, CloseButton)
+
+    -- ──────────────────────────────────────────────────────────
+    --  CONTAINER (اللي بيتحطوا فيه العناصر)
+    -- ──────────────────────────────────────────────────────────
+    local Container = create("Frame", {
+        Name = "Container",
+        Size = UDim2.new(0.88, 0, 0, 210),
+        Position = UDim2.new(0.06, 0, 0, 78),
+        BackgroundTransparency = 1,
+    }, MainFrame)
+    Window.Container = Container
+
+    local UIListLayout = create("UIListLayout", {
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 10),
+    }, Container)
+
+    -- ──────────────────────────────────────────────────────────
+    --  ANIMATION HELPER
+    -- ──────────────────────────────────────────────────────────
+    local function anim(inst, props, duration, style, dir)
+        if not AnimEnabled or not inst or not inst.Parent then
+            if inst then
+                for k, v in pairs(props or {}) do
+                    pcall(function() inst[k] = v end)
+                end
+            end
+            return nil
+        end
+        local t = TweenService:Create(
+            inst,
+            TweenInfo.new(
+                duration or 0.25,
+                style or Enum.EasingStyle.Quint,
+                dir or Enum.EasingDirection.Out
+            ),
+            props
+        )
+        t:Play()
+        return t
+    end
+    Window._anim = anim
+
+    -- ═══════════════════════════════════════════════════════════
+    --  ENTRANCE ANIMATION
+    -- ═══════════════════════════════════════════════════════════
+    task.spawn(function()
+        MainFrame.Size = UDim2.new(0, 0, 0, 0)
+        MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+        MainFrame.BackgroundTransparency = 1
+        MainStroke.Transparency = 1
+        TitleLabel.TextTransparency = 1
+        SubTitleLabel.TextTransparency = 1
+        CloseButton.BackgroundTransparency = 1
+        CloseButton.TextTransparency = 1
+        CloseStroke.Transparency = 1
+
+        task.wait(0.1)
+        anim(Overlay, { BackgroundTransparency = 0.55 }, 0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+        anim(MainFrame, {
+            Size = UDim2.new(0, WIN_W, 0, WIN_H),
+            Position = UDim2.new(0.5, -WIN_W / 2, 0.5, -WIN_H / 2),
+            BackgroundTransparency = 0,
+        }, ANIM_SPEED, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+
+        anim(MainStroke, { Transparency = 0 }, 0.5)
+
+        task.wait(0.15)
+        anim(TitleLabel, { TextTransparency = 0 }, 0.3)
+        task.wait(0.08)
+        anim(SubTitleLabel, { TextTransparency = 0 }, 0.3)
+        anim(CloseButton, { BackgroundTransparency = 0, TextTransparency = 0 }, 0.25)
+        anim(CloseStroke, { Transparency = 0 }, 0.25)
+
+        task.spawn(function()
+            anim(Glow, { BackgroundTransparency = 0.75 }, 0.6)
+            task.wait(0.6)
+            anim(Glow, { BackgroundTransparency = 0.9 }, 0.6)
+        end)
+
+        task.wait(0.35)
+        anim(Overlay, { BackgroundTransparency = 1 }, 0.4)
+    end)
+
+    -- ═══════════════════════════════════════════════════════════
+    --  DRAG SYSTEM
+    -- ═══════════════════════════════════════════════════════════
     local IsDragging = false
     local DragStart, StartPos
 
-    TitleLabel.InputBegan:Connect(function(InputObject)
-        if InputObject.UserInputType == Enum.UserInputType.MouseButton1 or InputObject.UserInputType == Enum.UserInputType.Touch then
-            IsDragging = true
-            DragStart = InputObject.Position
-            StartPos = MainFrame.Position
-        end
-    end)
+    local function startDrag(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1
+            and input.UserInputType ~= Enum.UserInputType.Touch then return end
+        IsDragging = true
+        DragStart = input.Position
+        StartPos = MainFrame.Position
+    end
 
-    TitleLabel.InputEnded:Connect(function(InputObject)
-        if InputObject.UserInputType == Enum.UserInputType.MouseButton1 or InputObject.UserInputType == Enum.UserInputType.Touch then
+    local function endDrag(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
             IsDragging = false
         end
+    end
+
+    TitleLabel.InputBegan:Connect(startDrag)
+    TitleLabel.InputEnded:Connect(endDrag)
+    SubTitleLabel.InputBegan:Connect(startDrag)
+    SubTitleLabel.InputEnded:Connect(endDrag)
+
+    table.insert(Window._connections, UserInputService.InputChanged:Connect(function(input)
+        if not IsDragging then return end
+        if input.UserInputType ~= Enum.UserInputType.MouseMovement
+            and input.UserInputType ~= Enum.UserInputType.Touch then return end
+        local delta = input.Position - DragStart
+        MainFrame.Position = UDim2.new(
+            StartPos.X.Scale,
+            StartPos.X.Offset + delta.X,
+            StartPos.Y.Scale,
+            StartPos.Y.Offset + delta.Y
+        )
+    end))
+
+    table.insert(Window._connections, UserInputService.InputEnded:Connect(endDrag))
+
+    -- ═══════════════════════════════════════════════════════════
+    --  CLOSE BUTTON
+    -- ═══════════════════════════════════════════════════════════
+    CloseButton.MouseEnter:Connect(function()
+        anim(CloseButton, { BackgroundColor3 = Color3.fromRGB(180, 50, 60) }, 0.15)
+        anim(CloseStroke, { Color = Color3.fromRGB(240, 100, 110) }, 0.15)
+    end)
+    CloseButton.MouseLeave:Connect(function()
+        anim(CloseButton, { BackgroundColor3 = Color3.fromRGB(24, 26, 34) }, 0.15)
+        anim(CloseStroke, { Color = Color3.fromRGB(60, 65, 80) }, 0.15)
+    end)
+    CloseButton.MouseButton1Click:Connect(function()
+        if Window.Destroy then Window:Destroy() end
     end)
 
-    UserInputService.InputChanged:Connect(function(InputObject)
-        if IsDragging and (InputObject.UserInputType == Enum.UserInputType.MouseMovement or InputObject.UserInputType == Enum.UserInputType.Touch) then
-            local Delta = InputObject.Position - DragStart
-            MainFrame.Position = UDim2.new(
-                StartPos.X.Scale, 
-                StartPos.X.Offset + Delta.X, 
-                StartPos.Y.Scale, 
-                StartPos.Y.Offset + Delta.Y
-            )
-        end
-    end)
+    -- ═══════════════════════════════════════════════════════════
+    --  CONTAINER SCROLLING (لما العناصر تكتر)
+    -- ═══════════════════════════════════════════════════════════
+    local ScrollingFrame = create("ScrollingFrame", {
+        Name = "ScrollingContainer",
+        Size = UDim2.new(0.92, 0, 0, 218),
+        Position = UDim2.new(0.04, 0, 0, 78),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ScrollBarThickness = 3,
+        ScrollBarImageColor3 = Color3.fromRGB(60, 65, 80),
+        ScrollBarImageTransparency = 0.3,
+        CanvasSize = UDim2.new(0, 0, 0, 0),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        ScrollingDirection = Enum.ScrollingDirection.Y,
+        ElasticBehavior = Enum.ElasticBehavior.WhenScrollable,
+        Active = true,
+    }, MainFrame)
+    Window.ScrollContainer = ScrollingFrame
 
-    -- Elements Methods
-    function Window:AddInput(Placeholder, ButtonText, OnApply)
-        local InputFrame = Instance.new("Frame")
-        InputFrame.Size = UDim2.new(1, 0, 0, 42)
-        InputFrame.BackgroundColor3 = Color3.fromRGB(24, 26, 34)
-        InputFrame.Parent = Container
+    local ScrollList = create("UIListLayout", {
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 10),
+    }, ScrollingFrame)
 
-        Instance.new("UICorner", InputFrame).CornerRadius = UDim.new(0, 10)
-        local InputStroke = Instance.new("UIStroke", InputFrame)
-        InputStroke.Color = Color3.fromRGB(60, 65, 80)
-        InputStroke.Thickness = 1.2
+    create("UIPadding", {
+        PaddingTop = UDim.new(0, 4),
+        PaddingBottom = UDim.new(0, 12),
+        PaddingLeft = UDim.new(0, 2),
+        PaddingRight = UDim.new(0, 6),
+    }, ScrollingFrame)
 
-        local TextBox = Instance.new("TextBox")
-        TextBox.Size = UDim2.new(0.65, 0, 1, 0)
-        TextBox.Position = UDim2.new(0.04, 0, 0, 0)
-        TextBox.BackgroundTransparency = 1
-        TextBox.PlaceholderText = Placeholder or "اكتب هنا..."
-        TextBox.PlaceholderColor3 = Color3.fromRGB(100, 105, 120)
-        TextBox.Text = ""
-        TextBox.TextColor3 = Color3.fromRGB(240, 242, 245)
-        TextBox.Font = Enum.Font.GothamBold
-        TextBox.TextSize = 12
-        TextBox.TextXAlignment = Enum.TextXAlignment.Left
-        TextBox.Parent = InputFrame
+    -- نخفي الـ Container الأصلي ونستخدم ScrollingFrame
+    Container.Visible = false
+    Window._elementsContainer = ScrollingFrame
 
-        local ApplyButton = Instance.new("TextButton")
-        ApplyButton.Size = UDim2.new(0.28, 0, 0.74, 0)
-        ApplyButton.Position = UDim2.new(0.68, 0, 0.13, 0)
-        ApplyButton.BackgroundColor3 = Color3.fromRGB(240, 242, 245)
-        ApplyButton.Text = ButtonText or "تطبيق"
-        ApplyButton.TextColor3 = Color3.fromRGB(15, 16, 20)
-        ApplyButton.Font = Enum.Font.GothamBold
-        ApplyButton.TextSize = 11
-        ApplyButton.Parent = InputFrame
-
-        Instance.new("UICorner", ApplyButton).CornerRadius = UDim.new(0, 8)
-
-        local function Execute()
-            if OnApply then OnApply(TextBox.Text) end
-        end
-
-        ApplyButton.MouseButton1Click:Connect(Execute)
-        TextBox.FocusLost:Connect(function(Enter) if Enter then Execute() end end)
-        
-        return TextBox
-    end
-
-    function Window:AddGridButtons(ButtonsTable, OnClick)
-        local GridContainer = Instance.new("Frame")
-        GridContainer.Size = UDim2.new(1, 0, 0, 100)
-        GridContainer.BackgroundTransparency = 1
-        GridContainer.Parent = Container
-
-        local UIGridLayout = Instance.new("UIGridLayout")
-        UIGridLayout.CellSize = UDim2.new(0.31, 0, 0.42, 0)
-        UIGridLayout.CellPadding = UDim2.new(0.03, 0, 0.12, 0)
-        UIGridLayout.Parent = GridContainer
-
-        for _, Value in ipairs(ButtonsTable) do
-            local PresetBtn = Instance.new("TextButton")
-            PresetBtn.Text = tostring(Value)
-            PresetBtn.BackgroundColor3 = Color3.fromRGB(24, 26, 34)
-            PresetBtn.TextColor3 = Color3.fromRGB(180, 185, 200)
-            PresetBtn.Font = Enum.Font.GothamBold
-            PresetBtn.TextSize = 12
-            PresetBtn.Parent = GridContainer
-
-            Instance.new("UICorner", PresetBtn).CornerRadius = UDim.new(0, 8)
-            local BtnStroke = Instance.new("UIStroke", PresetBtn)
-            BtnStroke.Color = Color3.fromRGB(60, 65, 80)
-            BtnStroke.Thickness = 1.2
-
-            PresetBtn.MouseButton1Click:Connect(function()
-                if OnClick then OnClick(Value) end
-            end)
-        end
-    end
-
-    function Window:AddButton(Text, OnClick)
-        local ActionButton = Instance.new("TextButton")
-        ActionButton.Size = UDim2.new(1, 0, 0, 34)
-        ActionButton.BackgroundColor3 = Color3.fromRGB(24, 26, 34)
-        ActionButton.Text = Text or "زر جديد"
-        ActionButton.TextColor3 = Color3.fromRGB(180, 185, 200)
-        ActionButton.Font = Enum.Font.GothamBold
-        ActionButton.TextSize = 11
-        ActionButton.Parent = Container
-
-        Instance.new("UICorner", ActionButton).CornerRadius = UDim.new(0, 8)
-        local Stroke = Instance.new("UIStroke", ActionButton)
-        Stroke.Color = Color3.fromRGB(60, 65, 80)
-        Stroke.Thickness = 1.2
-
-        ActionButton.MouseButton1Click:Connect(function()
-            if OnClick then OnClick() end
-        end)
-    end
-
+    -- ═══════════════════════════════════════════════════════════
+    --  DESTROY
+    -- ═══════════════════════════════════════════════════════════
     function Window:Destroy()
-        MaxScreenGui:Destroy()
+        if self._destroyed then return end
+        self._destroyed = true
+
+        local out = anim(MainFrame, {
+            Size = UDim2.new(0, 0, 0, 0),
+            Position = UDim2.new(0.5, 0, 0.5, 0),
+            BackgroundTransparency = 1,
+        }, 0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+
+        anim(Overlay, { BackgroundTransparency = 0.5 }, 0.3)
+
+        local function cleanup()
+            for _, c in ipairs(self._connections) do
+                pcall(function() c:Disconnect() end)
+            end
+            pcall(function() MaxScreenGui:Destroy() end)
+        end
+
+        if out then
+            out.Completed:Connect(cleanup)
+        else
+            cleanup()
+        end
     end
+
+    -- ═══════════════════════════════════════════════════════════
+    --  ANIMATIONS TOGGLE
+    -- ═══════════════════════════════════════════════════════════
+    function Window:SetAnimations(enabled)
+        AnimEnabled = enabled and true or false
+    end
+
+    -- ═══════════════════════════════════════════════════════════
+    --  INTERNAL: helper للعناصر
+    -- ═══════════════════════════════════════════════════════════
+    Window._create = create
+    Window._anim = anim
+
+    -- ═══════════════════════════════════════════════════════════
+    --  PLACEHOLDER METHODS (هتتعرّف في الجزء 2 و 3)
+    -- ═══════════════════════════════════════════════════════════
+    -- AddButton, AddInput, AddGridButtons
+    -- AddToggle, AddSlider, AddDropdown, AddSection, AddLabel, AddKeybind
+    -- Notify, NotifySuccess, NotifyError, NotifyWarning, NotifyInfo
+
+    -- هنعرّفهم هنا مباشرة قبل return عشان الملف يشتغل منفرد
+    -- (الأجزاء 2 و3 هتكملهم لو حبيت)
 
     return Window
 end
 
 return MaxUI
+    -- ═══════════════════════════════════════════════════════════
+    --  ELEMENT: AddButton
+    -- ═══════════════════════════════════════════════════════════
+    function Window:AddButton(Text, OnClick)
+        local ActionButton = create("TextButton", {
+            Size = UDim2.new(1, 0, 0, 34),
+            BackgroundColor3 = Color3.fromRGB(24, 26, 34),
+            Text = Text or "زر جديد",
+            TextColor3 = Color3.fromRGB(180, 185, 200),
+            Font = Enum.Font.GothamBold,
+            TextSize = 11,
+            AutoButtonColor = false,
+            BackgroundTransparency = 1,
+            TextTransparency = 1,
+        }, self._elementsContainer)
+        create("UICorner", { CornerRadius = UDim.new(0, 8), Parent = ActionButton })
+        local Stroke = create("UIStroke", {
+            Color = Color3.fromRGB(60, 65, 80),
+            Thickness = 1.2,
+            Transparency = 1,
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+        }, ActionButton)
+
+        task.spawn(function()
+            task.wait(0.6)
+            anim(ActionButton, { BackgroundTransparency = 0, TextTransparency = 0 }, 0.3)
+            anim(Stroke, { Transparency = 0 }, 0.3)
+        end)
+
+        ActionButton.MouseEnter:Connect(function()
+            anim(ActionButton, { BackgroundColor3 = Color3.fromRGB(35, 40, 52) }, 0.12)
+            anim(Stroke, { Color = Color3.fromRGB(120, 130, 160) }, 0.12)
+        end)
+        ActionButton.MouseLeave:Connect(function()
+            anim(ActionButton, { BackgroundColor3 = Color3.fromRGB(24, 26, 34) }, 0.12)
+            anim(Stroke, { Color = Color3.fromRGB(60, 65, 80) }, 0.12)
+        end)
+
+        ActionButton.MouseButton1Click:Connect(function()
+            local pressAnim = anim(ActionButton, { Size = UDim2.new(0.97, 0, 0, 34) }, 0.08)
+            task.delay(0.1, function()
+                anim(ActionButton, { Size = UDim2.new(1, 0, 0, 34) }, 0.12)
+            end)
+            if OnClick then task.spawn(OnClick) end
+        end)
+
+        return ActionButton
+    end
+
+    -- ═══════════════════════════════════════════════════════════
+    --  ELEMENT: AddInput
+    -- ═══════════════════════════════════════════════════════════
+    function Window:AddInput(Placeholder, ButtonText, OnApply)
+        local InputFrame = create("Frame", {
+            Size = UDim2.new(1, 0, 0, 42),
+            BackgroundColor3 = Color3.fromRGB(24, 26, 34),
+            BackgroundTransparency = 1,
+        }, self._elementsContainer)
+        create("UICorner", { CornerRadius = UDim.new(0, 10), Parent = InputFrame })
+        local InputStroke = create("UIStroke", {
+            Color = Color3.fromRGB(60, 65, 80),
+            Thickness = 1.2,
+            Transparency = 1,
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+        }, InputFrame)
+
+        local TextBox = create("TextBox", {
+            Size = UDim2.new(0.65, 0, 1, 0),
+            Position = UDim2.new(0.04, 0, 0, 0),
+            BackgroundTransparency = 1,
+            PlaceholderText = Placeholder or "اكتب هنا...",
+            PlaceholderColor3 = Color3.fromRGB(100, 105, 120),
+            Text = "",
+            TextColor3 = Color3.fromRGB(240, 242, 245),
+            Font = Enum.Font.GothamBold,
+            TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            ClearTextOnFocus = false,
+            TextTransparency = 1,
+        }, InputFrame)
+
+        local ApplyButton = create("TextButton", {
+            Size = UDim2.new(0.28, 0, 0.74, 0),
+            Position = UDim2.new(0.68, 0, 0.13, 0),
+            BackgroundColor3 = Color3.fromRGB(240, 242, 245),
+            Text = ButtonText or "تطبيق",
+            TextColor3 = Color3.fromRGB(15, 16, 20),
+            Font = Enum.Font.GothamBold,
+            TextSize = 11,
+            AutoButtonColor = false,
+            BackgroundTransparency = 1,
+            TextTransparency = 1,
+        }, InputFrame)
+        create("UICorner", { CornerRadius = UDim.new(0, 8), Parent = ApplyButton })
+
+        task.spawn(function()
+            task.wait(0.6)
+            anim(InputFrame, { BackgroundTransparency = 0 }, 0.3)
+            anim(InputStroke, { Transparency = 0 }, 0.3)
+            anim(TextBox, { TextTransparency = 0 }, 0.3)
+            anim(ApplyButton, { BackgroundTransparency = 0, TextTransparency = 0 }, 0.3)
+        end)
+
+        local function Execute()
+            if OnApply then task.spawn(OnApply, TextBox.Text) end
+        end
+        ApplyButton.MouseButton1Click:Connect(Execute)
+        TextBox.FocusLost:Connect(function(Enter) if Enter then Execute() end end)
+
+        ApplyButton.MouseEnter:Connect(function()
+            anim(ApplyButton, { BackgroundColor3 = Color3.fromRGB(255, 255, 255) }, 0.12)
+        end)
+        ApplyButton.MouseLeave:Connect(function()
+            anim(ApplyButton, { BackgroundColor3 = Color3.fromRGB(240, 242, 245) }, 0.12)
+        end)
+
+        return TextBox
+    end
+
+    -- ═══════════════════════════════════════════════════════════
+    --  ELEMENT: AddGridButtons
+    -- ═══════════════════════════════════════════════════════════
+    function Window:AddGridButtons(ButtonsTable, OnClick)
+        local GridContainer = create("Frame", {
+            Size = UDim2.new(1, 0, 0, 100),
+            BackgroundTransparency = 1,
+        }, self._elementsContainer)
+
+        create("UIGridLayout", {
+            CellSize = UDim2.new(0.31, 0, 0.42, 0),
+            CellPadding = UDim2.new(0.03, 0, 0.12, 0),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+        }, GridContainer)
+
+        local i = 0
+        for _, Value in ipairs(ButtonsTable) do
+            i = i + 1
+            local PresetBtn = create("TextButton", {
+                Text = tostring(Value),
+                BackgroundColor3 = Color3.fromRGB(24, 26, 34),
+                TextColor3 = Color3.fromRGB(180, 185, 200),
+                Font = Enum.Font.GothamBold,
+                TextSize = 12,
+                AutoButtonColor = false,
+                BackgroundTransparency = 1,
+                TextTransparency = 1,
+            }, GridContainer)
+            create("UICorner", { CornerRadius = UDim.new(0, 8), Parent = PresetBtn })
+            local BtnStroke = create("UIStroke", {
+                Color = Color3.fromRGB(60, 65, 80),
+                Thickness = 1.2,
+                Transparency = 1,
+                ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+            }, PresetBtn)
+
+            task.spawn(function()
+                task.wait(0.55 + (i - 1) * 0.06)
+                anim(PresetBtn, { BackgroundTransparency = 0, TextTransparency = 0 }, 0.28)
+                anim(BtnStroke, { Transparency = 0 }, 0.28)
+            end)
+
+            PresetBtn.MouseEnter:Connect(function()
+                anim(PresetBtn, { BackgroundColor3 = Color3.fromRGB(35, 40, 52) }, 0.12)
+                anim(BtnStroke, { Color = Color3.fromRGB(120, 130, 160) }, 0.12)
+            end)
+            PresetBtn.MouseLeave:Connect(function()
+                anim(PresetBtn, { BackgroundColor3 = Color3.fromRGB(24, 26, 34) }, 0.12)
+                anim(BtnStroke, { Color = Color3.fromRGB(60, 65, 80) }, 0.12)
+            end)
+            PresetBtn.MouseButton1Click:Connect(function()
+                if OnClick then task.spawn(OnClick, Value) end
+            end)
+        end
+
+        return GridContainer
+    end
+
+    -- ═══════════════════════════════════════════════════════════
+    --  ELEMENT: AddSection
+    -- ═══════════════════════════════════════════════════════════
+    function Window:AddSection(Text)
+        local SectionWrap = create("Frame", {
+            Size = UDim2.new(1, 0, 0, 22),
+            BackgroundTransparency = 1,
+        }, self._elementsContainer)
+
+        local Line = create("Frame", {
+            Size = UDim2.new(1, 0, 0, 1),
+            Position = UDim2.new(0, 0, 0.5, 0),
+            BackgroundColor3 = Color3.fromRGB(60, 65, 80),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+        }, SectionWrap)
+
+        local Tag = create("Frame", {
+            Size = UDim2.new(0, 0, 1, 0),
+            Position = UDim2.new(0, 0, 0, 0),
+            BackgroundColor3 = Color3.fromRGB(20, 22, 30),
+            BackgroundTransparency = 1,
+            AutomaticSize = Enum.AutomaticSize.X,
+        }, SectionWrap)
+        create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = Tag })
+        create("UIPadding", {
+            PaddingLeft = UDim.new(0, 10),
+            PaddingRight = UDim.new(0, 10),
+        }, Tag)
+
+        local Lbl = create("TextLabel", {
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1,
+            Text = Text or "قسم",
+            TextColor3 = Color3.fromRGB(180, 185, 200),
+            Font = Enum.Font.GothamBold,
+            TextSize = 10,
+            TextTransparency = 1,
+        }, Tag)
+
+        task.spawn(function()
+            task.wait(0.55)
+            anim(Line, { BackgroundTransparency = 0.5 }, 0.3)
+            anim(Tag, { BackgroundTransparency = 0 }, 0.3)
+            anim(Lbl, { TextTransparency = 0 }, 0.3)
+        end)
+
+        return SectionWrap
+    end
+
+    -- ═══════════════════════════════════════════════════════════
+    --  ELEMENT: AddLabel
+    -- ═══════════════════════════════════════════════════════════
+    function Window:AddLabel(Text, Color)
+        local Label = create("TextLabel", {
+            Size = UDim2.new(1, 0, 0, 22),
+            BackgroundTransparency = 1,
+            Text = Text or "",
+            TextColor3 = Color or Color3.fromRGB(130, 135, 150),
+            Font = Enum.Font.Gotham,
+            TextSize = 11,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextWrapped = true,
+            TextTransparency = 1,
+        }, self._elementsContainer)
+
+        task.spawn(function()
+            task.wait(0.6)
+            anim(Label, { TextTransparency = 0 }, 0.3)
+        end)
+
+        return Label
+    end
+        -- ═══════════════════════════════════════════════════════════
+    --  ELEMENT: AddToggle
+    -- ═══════════════════════════════════════════════════════════
+    function Window:AddToggle(Text, Default, OnChange, Flag)
+        Flag = Flag or Text
+        local State = { Value = Default or false }
+
+        local ToggleFrame = create("Frame", {
+            Size = UDim2.new(1, 0, 0, 38),
+            BackgroundColor3 = Color3.fromRGB(24, 26, 34),
+            BackgroundTransparency = 1,
+        }, self._elementsContainer)
+        create("UICorner", { CornerRadius = UDim.new(0, 10), Parent = ToggleFrame })
+        local FrameStroke = create("UIStroke", {
+            Color = Color3.fromRGB(60, 65, 80),
+            Thickness = 1.2,
+            Transparency = 1,
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+        }, ToggleFrame)
+
+        local Label = create("TextLabel", {
+            Size = UDim2.new(0.7, 0, 1, 0),
+            Position = UDim2.new(0, 12, 0, 0),
+            BackgroundTransparency = 1,
+            Text = Text or "Toggle",
+            TextColor3 = Color3.fromRGB(220, 225, 235),
+            Font = Enum.Font.GothamBold,
+            TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextTransparency = 1,
+        }, ToggleFrame)
+
+        local Track = create("TextButton", {
+            Size = UDim2.new(0, 44, 0, 24),
+            Position = UDim2.new(1, -54, 0.5, -12),
+            BackgroundColor3 = State.Value and Color3.fromRGB(80, 200, 120) or Color3.fromRGB(40, 44, 55),
+            BackgroundTransparency = 1,
+            Text = "",
+            AutoButtonColor = false,
+        }, ToggleFrame)
+        create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = Track })
+
+        local TrackStroke = create("UIStroke", {
+            Color = State.Value and Color3.fromRGB(80, 200, 120) or Color3.fromRGB(60, 65, 80),
+            Thickness = 1.2,
+            Transparency = 1,
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+        }, Track)
+
+        local Knob = create("Frame", {
+            Size = UDim2.new(0, 18, 0, 18),
+            Position = State.Value and UDim2.new(1, -21, 0.5, -9) or UDim2.new(0, 3, 0.5, -9),
+            BackgroundColor3 = Color3.fromRGB(240, 242, 245),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+        }, Track)
+        create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = Knob })
+
+        task.spawn(function()
+            task.wait(0.6)
+            anim(ToggleFrame, { BackgroundTransparency = 0 }, 0.3)
+            anim(FrameStroke, { Transparency = 0 }, 0.3)
+            anim(Label, { TextTransparency = 0 }, 0.3)
+            anim(Track, { BackgroundTransparency = 0 }, 0.3)
+            anim(TrackStroke, { Transparency = 0 }, 0.3)
+            anim(Knob, { BackgroundTransparency = 0 }, 0.3)
+        end)
+
+        local function SetValue(val, fire)
+            State.Value = val
+            self.Flags[Flag] = val
+            local onColor = Color3.fromRGB(80, 200, 120)
+            local offColor = Color3.fromRGB(40, 44, 55)
+            anim(Track, { BackgroundColor3 = val and onColor or offColor }, 0.2)
+            anim(TrackStroke, { Color = val and onColor or Color3.fromRGB(60, 65, 80) }, 0.2)
+            anim(Knob, {
+                Position = val and UDim2.new(1, -21, 0.5, -9) or UDim2.new(0, 3, 0.5, -9),
+            }, 0.22)
+            if fire and OnChange then task.spawn(OnChange, val) end
+        end
+
+        Track.MouseButton1Click:Connect(function()
+            SetValue(not State.Value, true)
+        end)
+
+        SetValue(Default or false, false)
+
+        return {
+            Set = function(_, v) SetValue(v, true) end,
+            Get = function() return State.Value end,
+            Toggle = ToggleFrame,
+        }
+    end
+
+    -- ═══════════════════════════════════════════════════════════
+    --  ELEMENT: AddSlider
+    -- ═══════════════════════════════════════════════════════════
+    function Window:AddSlider(Text, Min, Max, Default, OnChange, Flag, Suffix)
+        Flag = Flag or Text
+        Min = Min or 0
+        Max = Max or 100
+        Default = Default or Min
+        Suffix = Suffix or ""
+        local State = { Value = Default }
+
+        local SliderFrame = create("Frame", {
+            Size = UDim2.new(1, 0, 0, 56),
+            BackgroundColor3 = Color3.fromRGB(24, 26, 34),
+            BackgroundTransparency = 1,
+        }, self._elementsContainer)
+        create("UICorner", { CornerRadius = UDim.new(0, 10), Parent = SliderFrame })
+        local FrameStroke = create("UIStroke", {
+            Color = Color3.fromRGB(60, 65, 80),
+            Thickness = 1.2,
+            Transparency = 1,
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+        }, SliderFrame)
+
+        local Label = create("TextLabel", {
+            Size = UDim2.new(0.6, 0, 0, 20),
+            Position = UDim2.new(0, 12, 0, 6),
+            BackgroundTransparency = 1,
+            Text = Text or "Slider",
+            TextColor3 = Color3.fromRGB(220, 225, 235),
+            Font = Enum.Font.GothamBold,
+            TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextTransparency = 1,
+        }, SliderFrame)
+
+        local ValueLbl = create("TextLabel", {
+            Size = UDim2.new(0.3, 0, 0, 20),
+            Position = UDim2.new(0.7, 0, 0, 6),
+            BackgroundTransparency = 1,
+            Text = tostring(Default) .. Suffix,
+            TextColor3 = Color3.fromRGB(80, 200, 120),
+            Font = Enum.Font.GothamBold,
+            TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Right,
+            TextTransparency = 1,
+        }, SliderFrame)
+
+        local Track = create("Frame", {
+            Size = UDim2.new(1, -24, 0, 8),
+            Position = UDim2.new(0, 12, 0, 34),
+            BackgroundColor3 = Color3.fromRGB(30, 34, 44),
+            BackgroundTransparency = 1,
+        }, SliderFrame)
+        create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = Track })
+
+        local Fill = create("Frame", {
+            Size = UDim2.new((Default - Min) / math.max(Max - Min, 0.001), 0, 1, 0),
+            BackgroundColor3 = Color3.fromRGB(80, 200, 120),
+            BackgroundTransparency = 1,
+        }, Track)
+        create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = Fill })
+
+        local Knob = create("Frame", {
+            Size = UDim2.new(0, 16, 0, 16),
+            Position = UDim2.new((Default - Min) / math.max(Max - Min, 0.001), -8, 0.5, -8),
+            BackgroundColor3 = Color3.fromRGB(240, 242, 245),
+            BackgroundTransparency = 1,
+        }, Track)
+        create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = Knob })
+
+        task.spawn(function()
+            task.wait(0.6)
+            anim(SliderFrame, { BackgroundTransparency = 0 }, 0.3)
+            anim(FrameStroke, { Transparency = 0 }, 0.3)
+            anim(Label, { TextTransparency = 0 }, 0.3)
+            anim(ValueLbl, { TextTransparency = 0 }, 0.3)
+            anim(Track, { BackgroundTransparency = 0 }, 0.3)
+            anim(Fill, { BackgroundTransparency = 0 }, 0.3)
+            anim(Knob, { BackgroundTransparency = 0 }, 0.3)
+        end)
+
+        local dragging = false
+        local function updateFromX(x)
+            local rel = math.clamp((x - Track.AbsolutePosition.X) / math.max(Track.AbsoluteSize.X, 1), 0, 1)
+            local v = math.floor(Min + (Max - Min) * rel + 0.5)
+            State.Value = v
+            self.Flags[Flag] = v
+            Fill.Size = UDim2.new(rel, 0, 1, 0)
+            Knob.Position = UDim2.new(rel, -8, 0.5, -8)
+            ValueLbl.Text = tostring(v) .. Suffix
+            if OnChange then task.spawn(OnChange, v) end
+        end
+
+        Track.InputBegan:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                updateFromX(i.Position.X)
+            end
+        end)
+        Knob.InputBegan:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+            end
+        end)
+        table.insert(self._connections, UserInputService.InputChanged:Connect(function(i)
+            if not dragging then return end
+            if i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch then
+                updateFromX(i.Position.X)
+            end
+        end))
+        table.insert(self._connections, UserInputService.InputEnded:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+                dragging = false
+            end
+        end))
+
+        return {
+            Set = function(_, v)
+                v = math.clamp(v, Min, Max)
+                State.Value = v
+                self.Flags[Flag] = v
+                local rel = (v - Min) / math.max(Max - Min, 0.001)
+                Fill.Size = UDim2.new(rel, 0, 1, 0)
+                Knob.Position = UDim2.new(rel, -8, 0.5, -8)
+                ValueLbl.Text = tostring(v) .. Suffix
+            end,
+            Get = function() return State.Value end,
+        }
+    end
+
+    -- ═══════════════════════════════════════════════════════════
+    --  ELEMENT: AddDropdown
+    -- ═══════════════════════════════════════════════════════════
+    function Window:AddDropdown(Text, Options, Default, OnChange, Flag)
+        Flag = Flag or Text
+        Options = Options or {}
+        Default = Default or (Options[1] or "")
+        local State = { Value = Default, Open = false }
+
+        local Wrap = create("Frame", {
+            Size = UDim2.new(1, 0, 0, 42),
+            BackgroundColor3 = Color3.fromRGB(24, 26, 34),
+            BackgroundTransparency = 1,
+            ClipsDescendants = true,
+        }, self._elementsContainer)
+        create("UICorner", { CornerRadius = UDim.new(0, 10), Parent = Wrap })
+        local WrapStroke = create("UIStroke", {
+            Color = Color3.fromRGB(60, 65, 80),
+            Thickness = 1.2,
+            Transparency = 1,
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+        }, Wrap)
+
+        local Label = create("TextLabel", {
+            Size = UDim2.new(0.4, 0, 1, 0),
+            Position = UDim2.new(0, 12, 0, 0),
+            BackgroundTransparency = 1,
+            Text = Text or "Dropdown",
+            TextColor3 = Color3.fromRGB(220, 225, 235),
+            Font = Enum.Font.GothamBold,
+            TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextTransparency = 1,
+        }, Wrap)
+
+        local Selected = create("TextButton", {
+            Size = UDim2.new(0, 130, 0, 28),
+            Position = UDim2.new(1, -142, 0.5, -14),
+            BackgroundColor3 = Color3.fromRGB(20, 22, 30),
+            BackgroundTransparency = 1,
+            Text = tostring(Default) .. "  ▼",
+            TextColor3 = Color3.fromRGB(220, 225, 235),
+            Font = Enum.Font.GothamBold,
+            TextSize = 11,
+            AutoButtonColor = false,
+            TextTransparency = 1,
+        }, Wrap)
+        create("UICorner", { CornerRadius = UDim.new(0, 8), Parent = Selected })
+        local SelStroke = create("UIStroke", {
+            Color = Color3.fromRGB(60, 65, 80),
+            Thickness = 1.2,
+            Transparency = 1,
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+        }, Selected)
+
+        local List = create("ScrollingFrame", {
+            Size = UDim2.new(1, -16, 0, math.min(#Options * 28, 140)),
+            Position = UDim2.new(0, 8, 0, 46),
+            BackgroundColor3 = Color3.fromRGB(20, 22, 30),
+            BackgroundTransparency = 0.05,
+            BorderSizePixel = 0,
+            ScrollBarThickness = 3,
+            ScrollBarImageColor3 = Color3.fromRGB(80, 200, 120),
+            CanvasSize = UDim2.new(0, 0, 0, 0),
+            AutomaticCanvasSize = Enum.AutomaticSize.Y,
+            Visible = false,
+            ZIndex = 5,
+        }, Wrap)
+        create("UICorner", { CornerRadius = UDim.new(0, 8), Parent = List })
+
+        create("UIListLayout", {
+            Padding = UDim.new(0, 2),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+        }, List)
+        create("UIPadding", {
+            PaddingTop = UDim.new(0, 4),
+            PaddingBottom = UDim.new(0, 4),
+        }, List)
+
+        task.spawn(function()
+            task.wait(0.6)
+            anim(Wrap, { BackgroundTransparency = 0 }, 0.3)
+            anim(WrapStroke, { Transparency = 0 }, 0.3)
+            anim(Label, { TextTransparency = 0 }, 0.3)
+            anim(Selected, { BackgroundTransparency = 0, TextTransparency = 0 }, 0.3)
+            anim(SelStroke, { Transparency = 0 }, 0.3)
+        end)
+
+        local Buttons = {}
+        for i, opt in ipairs(Options) do
+            local Btn = create("TextButton", {
+                Size = UDim2.new(1, 0, 0, 24),
+                BackgroundColor3 = opt == Default and Color3.fromRGB(30, 40, 32) or Color3.fromRGB(24, 26, 34),
+                Text = tostring(opt),
+                TextColor3 = opt == Default and Color3.fromRGB(120, 240, 160) or Color3.fromRGB(180, 185, 200),
+                Font = Enum.Font.GothamBold,
+                TextSize = 11,
+                AutoButtonColor = false,
+                LayoutOrder = i,
+            }, List)
+            create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = Btn })
+
+            Btn.MouseButton1Click:Connect(function()
+                State.Value = opt
+                self.Flags[Flag] = opt
+                Selected.Text = tostring(opt) .. "  ▼"
+                for _, b in ipairs(Buttons) do
+                    local on = b.Text == tostring(opt)
+                    b.BackgroundColor3 = on and Color3.fromRGB(30, 40, 32) or Color3.fromRGB(24, 26, 34)
+                    b.TextColor3 = on and Color3.fromRGB(120, 240, 160) or Color3.fromRGB(180, 185, 200)
+                end
+                State.Open = false
+                List.Visible = false
+                anim(Wrap, { Size = UDim2.new(1, 0, 0, 42) }, 0.2)
+                if OnChange then task.spawn(OnChange, opt) end
+            end)
+            table.insert(Buttons, Btn)
+        end
+
+        Selected.MouseButton1Click:Connect(function()
+            State.Open = not State.Open
+            List.Visible = State.Open
+            Selected.Text = tostring(State.Value) .. (State.Open and "  ▲" or "  ▼")
+            local targetH = State.Open and (42 + math.min(#Options * 28, 140) + 8) or 42
+            anim(Wrap, { Size = UDim2.new(1, 0, 0, targetH) }, 0.22)
+        end)
+
+        return {
+            Set = function(_, v)
+                State.Value = v
+                Selected.Text = tostring(v) .. "  ▼"
+            end,
+            Get = function() return State.Value end,
+        }
+    end
+
+    -- ═══════════════════════════════════════════════════════════
+    --  ELEMENT: AddKeybind
+    -- ═══════════════════════════════════════════════════════════
+    function Window:AddKeybind(Text, Default, OnPress, Flag)
+        Flag = Flag or Text
+        local State = { Key = Default, Listening = false }
+
+        local Row = create("Frame", {
+            Size = UDim2.new(1, 0, 0, 38),
+            BackgroundColor3 = Color3.fromRGB(24, 26, 34),
+            BackgroundTransparency = 1,
+        }, self._elementsContainer)
+        create("UICorner", { CornerRadius = UDim.new(0, 10), Parent = Row })
+        local RowStroke = create("UIStroke", {
+            Color = Color3.fromRGB(60, 65, 80),
+            Thickness = 1.2,
+            Transparency = 1,
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+        }, Row)
+
+        local Label = create("TextLabel", {
+            Size = UDim2.new(0.6, 0, 1, 0),
+            Position = UDim2.new(0, 12, 0, 0),
+            BackgroundTransparency = 1,
+            Text = Text or "Keybind",
+            TextColor3 = Color3.fromRGB(220, 225, 235),
+            Font = Enum.Font.GothamBold,
+            TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextTransparency = 1,
+        }, Row)
+
+        local KeyBtn = create("TextButton", {
+            Size = UDim2.new(0, 90, 0, 26),
+            Position = UDim2.new(1, -102, 0.5, -13),
+            BackgroundColor3 = Color3.fromRGB(20, 22, 30),
+            BackgroundTransparency = 1,
+            Text = Default and Default.Name or "اضغط",
+            TextColor3 = Default and Color3.fromRGB(80, 200, 120) or Color3.fromRGB(130, 135, 150),
+            Font = Enum.Font.GothamBold,
+            TextSize = 11,
+            AutoButtonColor = false,
+            TextTransparency = 1,
+        }, Row)
+        create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = KeyBtn })
+        local KeyStroke = create("UIStroke", {
+            Color = Color3.fromRGB(60, 65, 80),
+            Thickness = 1.2,
+            Transparency = 1,
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+        }, KeyBtn)
+
+        task.spawn(function()
+            task.wait(0.6)
+            anim(Row, { BackgroundTransparency = 0 }, 0.3)
+            anim(RowStroke, { Transparency = 0 }, 0.3)
+            anim(Label, { TextTransparency = 0 }, 0.3)
+            anim(KeyBtn, { BackgroundTransparency = 0, TextTransparency = 0 }, 0.3)
+            anim(KeyStroke, { Transparency = 0 }, 0.3)
+        end)
+
+        KeyBtn.MouseButton1Click:Connect(function()
+            State.Listening = true
+            KeyBtn.Text = "انتظر..."
+            anim(KeyBtn, { TextColor3 = Color3.fromRGB(240, 180, 60) }, 0.15)
+        end)
+
+        table.insert(self._connections, UserInputService.InputBegan:Connect(function(input, gp)
+            if State.Listening then
+                if input.UserInputType == Enum.UserInputType.Keyboard then
+                    if input.KeyCode == Enum.KeyCode.Backspace then
+                        State.Key = nil
+                        KeyBtn.Text = "لا شيء"
+                        KeyBtn.TextColor3 = Color3.fromRGB(130, 135, 150)
+                        self.Flags[Flag] = nil
+                    else
+                        State.Key = input.KeyCode
+                        KeyBtn.Text = input.KeyCode.Name
+                        KeyBtn.TextColor3 = Color3.fromRGB(80, 200, 120)
+                        self.Flags[Flag] = input.KeyCode
+                    end
+                    State.Listening = false
+                end
+            elseif not gp and State.Key and input.KeyCode == State.Key then
+                if OnPress then task.spawn(OnPress) end
+            end
+        end))
+
+        return {
+            Set = function(_, k)
+                State.Key = k
+                KeyBtn.Text = k and k.Name or "لا شيء"
+                KeyBtn.TextColor3 = k and Color3.fromRGB(80, 200, 120) or Color3.fromRGB(130, 135, 150)
+            end,
+            Get = function() return State.Key end,
+        }
+    end
+
+    -- ═══════════════════════════════════════════════════════════
+    --  ELEMENT: Notify
+    -- ═══════════════════════════════════════════════════════════
+    if not Window._notifyHolder then
+        local Holder = create("Frame", {
+            Name = "NotifyHolder",
+            Size = UDim2.new(0, 300, 0, 400),
+            Position = UDim2.new(1, -20, 0, 60),
+            AnchorPoint = Vector2.new(1, 0),
+            BackgroundTransparency = 1,
+            ZIndex = 9999,
+        }, MaxScreenGui)
+
+        create("UIListLayout", {
+            FillDirection = Enum.FillDirection.Vertical,
+            HorizontalAlignment = Enum.HorizontalAlignment.Right,
+            VerticalAlignment = Enum.VerticalAlignment.Top,
+            Padding = UDim.new(0, 8),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+        }, Holder)
+        Window._notifyHolder = Holder
+    end
+
+    function Window:Notify(Options)
+        Options = Options or {}
+        local title = Options.Title or "إشعار"
+        local text = Options.Text or ""
+        local dur = Options.Duration or 4
+        local ntype = Options.Type or "info"
+
+        local colors = {
+            info    = Color3.fromRGB(60, 140, 240),
+            success = Color3.fromRGB(80, 200, 120),
+            warning = Color3.fromRGB(240, 180, 60),
+            error   = Color3.fromRGB(220, 70, 80),
+        }
+        local icons = {
+            info    = "ℹ",
+            success = "✓",
+            warning = "⚠",
+            error   = "✕",
+        }
+        local accent = colors[ntype] or colors.info
+        local icon = icons[ntype] or "ℹ"
+
+        local Card = create("Frame", {
+            Size = UDim2.new(1, 0, 0, 66),
+            Position = UDim2.new(1, 350, 0, 0),
+            BackgroundColor3 = Color3.fromRGB(20, 22, 30),
+            BorderSizePixel = 0,
+            ClipsDescendants = true,
+            ZIndex = 10000,
+        }, self._notifyHolder)
+        create("UICorner", { CornerRadius = UDim.new(0, 10), Parent = Card })
+        local cs = create("UIStroke", {
+            Color = accent,
+            Thickness = 1.3,
+            Transparency = 0.2,
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+        }, Card)
+
+        local Bar = create("Frame", {
+            Size = UDim2.new(0, 3, 1, -8),
+            Position = UDim2.new(0, 0, 0, 4),
+            BackgroundColor3 = accent,
+            BorderSizePixel = 0,
+        }, Card)
+        create("UICorner", { CornerRadius = UDim.new(0, 2), Parent = Bar })
+
+        local Ico = create("TextLabel", {
+            Size = UDim2.new(0, 32, 0, 32),
+            Position = UDim2.new(0, 12, 0.5, -16),
+            BackgroundColor3 = accent,
+            BackgroundTransparency = 0.85,
+            Text = icon,
+            TextColor3 = accent,
+            Font = Enum.Font.GothamBold,
+            TextSize = 16,
+        }, Card)
+        create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = Ico })
+
+        create("TextLabel", {
+            Size = UDim2.new(1, -60, 0, 18),
+            Position = UDim2.new(0, 54, 0, 10),
+            BackgroundTransparency = 1,
+            Text = title,
+            TextColor3 = Color3.fromRGB(240, 242, 245),
+            Font = Enum.Font.GothamBold,
+            TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Left,
+        }, Card)
+
+        create("TextLabel", {
+            Size = UDim2.new(1, -60, 0, 26),
+            Position = UDim2.new(0, 54, 0, 30),
+            BackgroundTransparency = 1,
+            Text = text,
+            TextColor3 = Color3.fromRGB(160, 165, 180),
+            Font = Enum.Font.Gotham,
+            TextSize = 10,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextWrapped = true,
+            TextYAlignment = Enum.TextYAlignment.Top,
+        }, Card)
+
+        anim(Card, { Position = UDim2.new(0, 0, 0, 0) }, 0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+
+        task.delay(dur, function()
+            if Card and Card.Parent then
+                local out = anim(Card, {
+                    Position = UDim2.new(1, 350, 0, 0),
+                    BackgroundTransparency = 1,
+                }, 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+                if out then
+                    out.Completed:Connect(function()
+                        pcall(function() Card:Destroy() end)
+                    end)
+                end
+            end
+        end)
+
+        return Card
+    end
+
+    function Window:NotifySuccess(t, x, d) return self:Notify({ Title = t, Text = x, Type = "success", Duration = d }) end
+    function Window:NotifyError(t, x, d)   return self:Notify({ Title = t, Text = x, Type = "error",   Duration = d }) end
+    function Window:NotifyWarning(t, x, d) return self:Notify({ Title = t, Text = x, Type = "warning", Duration = d }) end
+    function Window:NotifyInfo(t, x, d)    return self:Notify({ Title = t, Text = x, Type = "info",    Duration = d }) end
